@@ -1,0 +1,65 @@
+# =============================================
+#  docker-compose.yml — Day 4
+#  Controls TWO containers with ONE file!
+# =============================================
+
+services:
+
+  # ─────────────────────────────────────────
+  # SERVICE 1: PostgreSQL Database
+  # ─────────────────────────────────────────
+  db:
+    image: postgres:16-alpine        # use official Postgres image (alpine = small)
+    container_name: todo-db
+    environment:
+      POSTGRES_DB: tododb            # database name
+      POSTGRES_USER: postgres        # username
+      POSTGRES_PASSWORD: secret      # password
+    ports:
+      - "5432:5432"                  # expose so you can connect with pgAdmin if you want
+    volumes:
+      - pgdata:/var/lib/postgresql/data   # persist data — survives container restarts!
+    networks:
+      - app-network
+    healthcheck:                     # wait for Postgres to be READY before starting app
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─────────────────────────────────────────
+  # SERVICE 2: Spring Boot App
+  # ─────────────────────────────────────────
+  app:
+    build: .                         # build image from our Dockerfile in current folder
+    container_name: todo-app
+    ports:
+      - "8080:8080"                  # your machine:8080 → container:8080
+    environment:
+      # These override application.properties values
+      DB_HOST: db                    # 🔑 "db" = the service name above — Docker resolves it!
+      DB_PORT: 5432
+      DB_NAME: tododb
+      DB_USER: postgres
+      DB_PASSWORD: secret
+    depends_on:
+      db:
+        condition: service_healthy   # wait for db healthcheck to pass before starting app
+    networks:
+      - app-network
+    restart: on-failure              # auto-restart if app crashes
+
+# ─────────────────────────────────────────
+# NETWORK — containers talk to each other by name
+# Spring Boot uses "db" as hostname to reach Postgres
+# ─────────────────────────────────────────
+networks:
+  app-network:
+    driver: bridge
+
+# ─────────────────────────────────────────
+# VOLUME — database data lives here
+# Even if you stop/remove containers, data stays!
+# ─────────────────────────────────────────
+volumes:
+  pgdata:
